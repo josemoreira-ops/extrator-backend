@@ -1,7 +1,7 @@
 import io
 import re
-import pikepdf
 import pdfplumber
+from pypdf import PdfReader, PdfWriter
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
@@ -16,22 +16,24 @@ PDF_PASSWORD = "1231"
 
 def decrypt_pdf(file_bytes: bytes) -> bytes:
     """Return decrypted PDF bytes. If already unlocked, returns as-is."""
-    try:
-        with pikepdf.open(io.BytesIO(file_bytes)) as pdf:
-            if pdf.is_encrypted:
-                pass  # pikepdf opens with no password first
-        return file_bytes  # not encrypted
-    except pikepdf.PasswordError:
-        pass
+    reader = PdfReader(io.BytesIO(file_bytes))
 
-    # Try with default password
-    try:
-        buf = io.BytesIO()
-        with pikepdf.open(io.BytesIO(file_bytes), password=PDF_PASSWORD) as pdf:
-            pdf.save(buf)
-        return buf.getvalue()
-    except pikepdf.PasswordError:
+    if not reader.is_encrypted:
+        return file_bytes  # nothing to do
+
+    # Try default password
+    result = reader.decrypt(PDF_PASSWORD)
+    if result == 0:
         raise ValueError(f"PDF está protegido e a senha '{PDF_PASSWORD}' não funcionou.")
+
+    # Re-write to a clean, unlocked buffer
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
 
 
 def parse_brl(text: str) -> float | None:
